@@ -13,11 +13,13 @@ import pytest
 
 # ─── Helper to build raw bytes ────────────────────────────────────────────────
 
+
 def msg_to_bytes(msg) -> bytes:
     return msg.as_bytes()
 
 
 # ─── Fixture: valid simple message ────────────────────────────────────────────
+
 
 @pytest.fixture
 def valid_simple_eml() -> bytes:
@@ -46,6 +48,7 @@ def valid_simple_eml_file(tmp_path: Path, valid_simple_eml: bytes) -> Path:
 
 # ─── Fixture: valid multipart message ─────────────────────────────────────────
 
+
 @pytest.fixture
 def valid_multipart_eml() -> bytes:
     """A valid multipart/alternative email."""
@@ -73,6 +76,7 @@ def valid_multipart_eml_file(tmp_path: Path, valid_multipart_eml: bytes) -> Path
 
 # ─── Fixture: missing From header ─────────────────────────────────────────────
 
+
 @pytest.fixture
 def missing_from_eml() -> bytes:
     return (
@@ -86,6 +90,7 @@ def missing_from_eml() -> bytes:
 
 
 # ─── Fixture: duplicate headers ───────────────────────────────────────────────
+
 
 @pytest.fixture
 def duplicate_headers_eml() -> bytes:
@@ -103,6 +108,7 @@ def duplicate_headers_eml() -> bytes:
 
 # ─── Fixture: bad Date format ─────────────────────────────────────────────────
 
+
 @pytest.fixture
 def bad_date_eml() -> bytes:
     return (
@@ -117,6 +123,7 @@ def bad_date_eml() -> bytes:
 
 
 # ─── Fixture: missing MIME-Version ────────────────────────────────────────────
+
 
 @pytest.fixture
 def missing_mime_version_eml() -> bytes:
@@ -133,6 +140,7 @@ def missing_mime_version_eml() -> bytes:
 
 
 # ─── Fixture: broken boundary ─────────────────────────────────────────────────
+
 
 @pytest.fixture
 def broken_boundary_eml() -> bytes:
@@ -155,6 +163,7 @@ def broken_boundary_eml() -> bytes:
 
 # ─── Fixture: multipart/alternative without text/plain ───────────────────────
 
+
 @pytest.fixture
 def alt_no_plain_eml() -> bytes:
     """multipart/alternative with only text/html (no text/plain)."""
@@ -170,6 +179,7 @@ def alt_no_plain_eml() -> bytes:
 
 
 # ─── Fixture: invalid base64 ─────────────────────────────────────────────────
+
 
 @pytest.fixture
 def invalid_base64_eml() -> bytes:
@@ -188,6 +198,7 @@ def invalid_base64_eml() -> bytes:
 
 
 # ─── DKIM fixture helpers ─────────────────────────────────────────────────────
+
 
 def generate_dkim_test_keypair():
     """Generate an RSA key pair for DKIM testing."""

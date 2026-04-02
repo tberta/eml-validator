@@ -97,6 +97,9 @@ def validate_dkim(
     # Check signed headers
     results.extend(_check_signed_headers(sig_params))
 
+    # Check for oversigning (duplicate header names in h=)
+    results.extend(_check_dkim_h_duplicates(raw))
+
     # Canonicalization matrix
     if canonicalization_matrix:
         results.extend(_check_canonicalization_matrix(raw, sig_params))
@@ -147,7 +150,11 @@ def _check_signature_params(params: dict[str, str]) -> list[CheckResult]:
     algo = params.get("a", "")
     if algo == "rsa-sha256":
         results.append(
-            _ok("DKIM-Algorithm", "Signature algorithm: rsa-sha256 (secure)", rfc_ref="RFC 6376 §3.3")
+            _ok(
+                "DKIM-Algorithm",
+                "Signature algorithm: rsa-sha256 (secure)",
+                rfc_ref="RFC 6376 §3.3",
+            )
         )
     elif algo == "ed25519-sha256":
         results.append(
@@ -443,7 +450,9 @@ def _check_body_hash(raw: bytes, params: dict[str, str]) -> list[CheckResult]:
     algo = params.get("a", "rsa-sha256")
 
     if not bh_declared:
-        return [_error("DKIM-Body-Hash", "Missing bh= tag in DKIM-Signature", rfc_ref="RFC 6376 §3.5")]
+        return [
+            _error("DKIM-Body-Hash", "Missing bh= tag in DKIM-Signature", rfc_ref="RFC 6376 §3.5")
+        ]
 
     # Determine body canonicalization
     canon_parts = canon.split("/")
@@ -566,6 +575,42 @@ def _canonicalize_body_relaxed(body: bytes) -> bytes:
         result += b"\r\n"
 
     return result
+
+
+def _check_dkim_h_duplicates(raw: bytes) -> list[CheckResult]:
+    """Warn when h= lists the same header name more than once (oversigning technique)."""
+    results: list[CheckResult] = []
+    seen_findings: set[str] = set()
+    for sig_match in re.finditer(rb"(?mi)^dkim-signature\s*:[^\r\n]*(?:\r?\n[ \t][^\r\n]*)*", raw):
+        raw_sig = sig_match.group(0)
+        unfolded = re.sub(rb"\r?\n[ \t]", b" ", raw_sig).decode("ascii", errors="replace")
+        h_match = re.search(r"(?i)\bh\s*=\s*([^;]+)", unfolded)
+        if h_match is None:
+            continue
+        h_value = h_match.group(1).strip()
+        header_names = [h.strip().lower() for h in h_value.split(":") if h.strip()]
+        seen: dict[str, int] = {}
+        for name in header_names:
+            seen[name] = seen.get(name, 0) + 1
+        duplicates = {name: count for name, count in seen.items() if count > 1}
+        if not duplicates:
+            continue
+        dup_detail = ", ".join(f"{name} ×{count}" for name, count in sorted(duplicates.items()))
+        if dup_detail in seen_findings:
+            continue
+        seen_findings.add(dup_detail)
+        results.append(
+            _warn(
+                "DKIM-H-Oversigning",
+                f"DKIM h= tag oversigns {len(duplicates)} header(s) (listed more than once)",
+                rfc_ref="RFC 6376 §8.15",
+                details=(
+                    f"Oversigning lists a header name multiple times in h= to prevent header injection. "
+                    f"Headers: {dup_detail}"
+                ),
+            )
+        )
+    return results
 
 
 def _check_signed_headers(params: dict[str, str]) -> list[CheckResult]:

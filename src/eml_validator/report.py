@@ -157,13 +157,16 @@ def print_summary(report: ValidationReport) -> None:
         errors = sum(1 for c in checks if c.severity in (Severity.ERROR, Severity.CRITICAL))
         warnings = sum(1 for c in checks if c.severity == Severity.WARNING)
         result = "[green]PASS[/green]" if errors == 0 else "[red]FAIL[/red]"
-        table.add_row(name, result, str(errors) if errors else "-", str(warnings) if warnings else "-")
+        table.add_row(
+            name, result, str(errors) if errors else "-", str(warnings) if warnings else "-"
+        )
 
     console.print(table)
 
 
 def print_json(report: ValidationReport) -> None:
     """Print the report as JSON."""
+
     def check_to_dict(c: CheckResult) -> dict:
         return {
             "name": c.name,
