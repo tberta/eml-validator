@@ -57,7 +57,9 @@ def main() -> None:
 
 @main.command()
 @click.argument("paths", nargs=-1, required=True)
-@click.option("-r", "--recursive", is_flag=True, help="Recursively search directories for .eml files")
+@click.option(
+    "-r", "--recursive", is_flag=True, help="Recursively search directories for .eml files"
+)
 @click.option(
     "--only",
     default=None,
@@ -84,8 +86,12 @@ def main() -> None:
     is_flag=True,
     help="Test all 4 canonicalization combinations for DKIM",
 )
-@click.option("--check-auth", is_flag=True, help="Perform live DKIM/DMARC validation via authheaders")
-@click.option("--dns-server", default=None, metavar="IP", help="Use a custom DNS server for lookups")
+@click.option(
+    "--check-auth", is_flag=True, help="Perform live DKIM/DMARC validation via authheaders"
+)
+@click.option(
+    "--dns-server", default=None, metavar="IP", help="Use a custom DNS server for lookups"
+)
 @click.option("--no-dns", is_flag=True, help="Skip DNS lookups (useful in air-gapped environments)")
 def check(
     paths: tuple[str, ...],

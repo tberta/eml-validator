@@ -15,9 +15,7 @@ def _find(results, name: str):
 
 
 def _has_severity(results, name_prefix: str, severity: Severity) -> bool:
-    return any(
-        r.severity == severity for r in results if r.name.startswith(name_prefix)
-    )
+    return any(r.severity == severity for r in results if r.name.startswith(name_prefix))
 
 
 class TestRequiredHeaders:
@@ -35,12 +33,7 @@ class TestRequiredHeaders:
         assert _has_severity(results, "RFC5322-From-Header", Severity.OK)
 
     def test_missing_date_raises_error(self):
-        raw = (
-            b"From: Alice <alice@example.com>\r\n"
-            b"Subject: Test\r\n"
-            b"\r\n"
-            b"Body\r\n"
-        )
+        raw = b"From: Alice <alice@example.com>\r\nSubject: Test\r\n\r\nBody\r\n"
         results = validate_rfc(raw)
         assert _has_severity(results, "RFC5322-Date-Header", Severity.ERROR)
 
@@ -167,3 +160,216 @@ class TestHeaderEncoding:
         encoding_results = [r for r in results if r.name == "RFC2047-Header-Encoding"]
         if encoding_results:
             assert not any(r.severity == Severity.ERROR for r in encoding_results)
+
+
+class TestAddressSyntax:
+    def test_empty_cc_header_is_warning(self):
+        raw = (
+            b"From: alice@example.com\r\n"
+            b"To: bob@example.com\r\n"
+            b"CC: \r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        warns = [r for r in results if "Cc-Empty" in r.name and r.severity == Severity.WARNING]
+        assert warns, "Expected warning for empty CC header"
+
+    def test_present_cc_with_address_no_warning(self):
+        raw = (
+            b"From: alice@example.com\r\n"
+            b"To: bob@example.com\r\n"
+            b"CC: bob@example.com\r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert not any("Cc-Empty" in r.name for r in results)
+
+    def test_absent_cc_no_warning(self):
+        raw = (
+            b"From: alice@example.com\r\n"
+            b"To: bob@example.com\r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert not any("Cc-Empty" in r.name for r in results)
+
+
+# ---------------------------------------------------------------------------
+# Raw-byte checks (msglint-derived)
+# ---------------------------------------------------------------------------
+
+_VALID = (
+    b"From: alice@example.com\r\n"
+    b"To: bob@example.com\r\n"
+    b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+    b"Message-ID: <abc@example.com>\r\n"
+    b"\r\n"
+    b"Body\r\n"
+)
+
+
+class TestTruncatedMessage:
+    def test_no_blank_line_is_error(self):
+        raw = b"From: alice@example.com\r\nDate: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+        results = validate_rfc(raw)
+        assert _has_severity(results, "RFC5322-Truncated", Severity.ERROR)
+
+    def test_valid_message_no_error(self):
+        results = validate_rfc(_VALID)
+        assert not _has_severity(results, "RFC5322-Truncated", Severity.ERROR)
+
+
+class TestEmptyFoldedContinuation:
+    def test_whitespace_only_continuation_is_warning(self):
+        # A folded header where the continuation is spaces only
+        raw = (
+            b"From: alice@example.com\r\n"
+            b"Subject: hello\r\n"
+            b"X-Custom: value\r\n"
+            b"   \r\n"  # whitespace-only continuation
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert _has_severity(results, "RFC5322-EmptyFoldedContinuation", Severity.WARNING)
+
+    def test_normal_folding_no_warning(self):
+        raw = (
+            b"From: alice@example.com\r\n"
+            b"Subject: hello\r\n"
+            b"X-Custom: part1\r\n"
+            b"    part2\r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert not _has_severity(results, "RFC5322-EmptyFoldedContinuation", Severity.WARNING)
+
+
+class TestMultiFromSender:
+    def test_multi_from_no_sender_is_error(self):
+        raw = (
+            b"From: alice@example.com, bob@example.com\r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert _has_severity(results, "RFC5322-MultiFrom-NoSender", Severity.ERROR)
+
+    def test_multi_from_with_sender_ok(self):
+        raw = (
+            b"From: alice@example.com, bob@example.com\r\n"
+            b"Sender: alice@example.com\r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert not _has_severity(results, "RFC5322-MultiFrom-NoSender", Severity.ERROR)
+
+    def test_single_from_with_comma_in_display_name_ok(self):
+        # Comma inside quoted display name must not trigger the check
+        raw = (
+            b'From: "Smith, Alice" <alice@example.com>\r\n'
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert not _has_severity(results, "RFC5322-MultiFrom-NoSender", Severity.ERROR)
+
+    def test_single_from_no_error(self):
+        results = validate_rfc(_VALID)
+        assert not _has_severity(results, "RFC5322-MultiFrom-NoSender", Severity.ERROR)
+
+
+class Test8BitInStructuredFields:
+    def test_8bit_in_comment_is_error(self):
+        raw = (
+            b"From: alice@example.com (caf\xe9)\r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert _has_severity(results, "RFC5322-8BitInComment", Severity.ERROR)
+
+    def test_8bit_in_quoted_string_is_error(self):
+        raw = (
+            b'From: "caf\xe9" <alice@example.com>\r\n'
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert _has_severity(results, "RFC5322-8BitInQuotedString", Severity.ERROR)
+
+    def test_8bit_in_domain_literal_is_error(self):
+        raw = (
+            b"From: alice@[\xc0.example.com]\r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert _has_severity(results, "RFC5322-8BitInDomainLiteral", Severity.ERROR)
+
+    def test_ascii_structured_fields_no_error(self):
+        results = validate_rfc(_VALID)
+        assert not _has_severity(results, "RFC5322-8BitInComment", Severity.ERROR)
+        assert not _has_severity(results, "RFC5322-8BitInQuotedString", Severity.ERROR)
+        assert not _has_severity(results, "RFC5322-8BitInDomainLiteral", Severity.ERROR)
+
+
+class TestUnbalancedDelimiters:
+    def test_unbalanced_quote_is_error(self):
+        raw = (
+            b'From: "alice <alice@example.com>\r\n'
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert _has_severity(results, "RFC5322-UnbalancedQuote", Severity.ERROR)
+
+    def test_unbalanced_paren_is_error(self):
+        raw = (
+            b"From: alice@example.com (comment\r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert _has_severity(results, "RFC5322-UnbalancedComment", Severity.ERROR)
+
+    def test_balanced_delimiters_no_error(self):
+        results = validate_rfc(_VALID)
+        assert not _has_severity(results, "RFC5322-UnbalancedQuote", Severity.ERROR)
+        assert not _has_severity(results, "RFC5322-UnbalancedComment", Severity.ERROR)
+        assert not _has_severity(results, "RFC5322-UnbalancedDomainLiteral", Severity.ERROR)
+
+
+class TestNewlineInQuotedString:
+    def test_literal_newline_in_quoted_string_is_error(self):
+        # Embedded bare newline inside a quoted-string in the From header
+        raw = (
+            b'From: "alice\nmalformed" <alice@example.com>\r\n'
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_rfc(raw)
+        assert _has_severity(results, "RFC5322-NewlineInQuotedString", Severity.ERROR)
+
+    def test_no_newline_in_quoted_string_ok(self):
+        results = validate_rfc(_VALID)
+        assert not _has_severity(results, "RFC5322-NewlineInQuotedString", Severity.ERROR)

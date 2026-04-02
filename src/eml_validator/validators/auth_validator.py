@@ -70,7 +70,11 @@ def _parse_authentication_results(ar_value: str, index: int = 0) -> list[CheckRe
 
     authserv_id = parts[0].strip()
     results.append(
-        _ok(f"{prefix}-AuthServId", f"Authentication-Results from: {authserv_id}", rfc_ref="RFC 7601")
+        _ok(
+            f"{prefix}-AuthServId",
+            f"Authentication-Results from: {authserv_id}",
+            rfc_ref="RFC 7601",
+        )
     )
 
     # Parse each method result
@@ -145,6 +149,7 @@ def _run_authheaders_check(
         try:
             # Build a DNS function if needed
             if dns_override:
+
                 def dnsfunc(name: str, rdtype: str = "TXT") -> list[bytes]:
                     record = dns_override.get(name)
                     return [record] if record is not None else []

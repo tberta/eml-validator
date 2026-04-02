@@ -44,9 +44,8 @@ class TestDkimVerification:
         # Should have either DKIM-Verify failure or DKIM-Body-Hash failure
         verify_result = _find(results, "DKIM-Verify")
         body_hash_result = _find(results, "DKIM-Body-Hash")
-        failed = (
-            (verify_result and verify_result.severity == Severity.ERROR)
-            or (body_hash_result and body_hash_result.severity == Severity.ERROR)
+        failed = (verify_result and verify_result.severity == Severity.ERROR) or (
+            body_hash_result and body_hash_result.severity == Severity.ERROR
         )
         assert failed, "Expected verification failure for tampered email"
 
@@ -194,3 +193,37 @@ class TestExpiration:
         expiry_results = [r for r in results if r.name == "DKIM-Expiration"]
         assert expiry_results
         assert expiry_results[0].severity == Severity.ERROR
+
+
+class TestDKIMHeaderOversigning:
+    def test_duplicate_h_headers_is_warning(self):
+        raw = (
+            b"DKIM-Signature: v=1; a=rsa-sha256; d=example.com; s=test;\r\n"
+            b" c=relaxed/relaxed; h=from:to:from;\r\n"
+            b" bh=abc; b=sig\r\n"
+            b"From: alice@example.com\r\n"
+            b"To: bob@example.com\r\n"
+            b"Subject: Test\r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_dkim(raw, no_dns=True)
+        warns = [r for r in results if "H-Oversigning" in r.name and r.severity == Severity.WARNING]
+        assert warns, "Expected warning for duplicate header name in DKIM h= tag"
+        assert any("from ×2" in r.details for r in warns)
+
+    def test_unique_h_headers_no_warning(self):
+        raw = (
+            b"DKIM-Signature: v=1; a=rsa-sha256; d=example.com; s=test;\r\n"
+            b" c=relaxed/relaxed; h=from:to:subject;\r\n"
+            b" bh=abc; b=sig\r\n"
+            b"From: alice@example.com\r\n"
+            b"To: bob@example.com\r\n"
+            b"Subject: Test\r\n"
+            b"Date: Mon, 01 Jan 2024 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body\r\n"
+        )
+        results = validate_dkim(raw, no_dns=True)
+        assert not any("H-Oversigning" in r.name for r in results)
